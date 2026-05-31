@@ -77,14 +77,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "One Playlist" },
+      { name: "description", content: "Unified Playlist Hub centralizes music playlists from multiple streaming services into one app." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "One Playlist" },
+      { property: "og:description", content: "Unified Playlist Hub centralizes music playlists from multiple streaming services into one app." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "One Playlist" },
+      { name: "twitter:description", content: "Unified Playlist Hub centralizes music playlists from multiple streaming services into one app." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/40edd244-5b7d-4d17-a110-814ce895f440/id-preview-2be46f51--77cf4e53-1255-406a-9b07-1d906b5a93b3.lovable.app-1780205039423.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/40edd244-5b7d-4d17-a110-814ce895f440/id-preview-2be46f51--77cf4e53-1255-406a-9b07-1d906b5a93b3.lovable.app-1780205039423.png" },
     ],
     links: [
       {

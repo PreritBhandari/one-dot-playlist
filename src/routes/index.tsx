@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import coverResonance from "@/assets/cover-resonance.jpg";
 import { PLATFORMS, useConnections, type PlatformId } from "@/hooks/use-connections";
+import { AppProvider, useApp } from "@/hooks/use-app";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -44,7 +45,8 @@ function Logo() {
   );
 }
 
-function Nav() {
+function Nav({ onSignInClick }: { onSignInClick: () => void }) {
+  const { user, signOut } = useApp();
   return (
     <nav className="fixed top-0 inset-x-0 z-50 border-b border-border bg-background/70 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -56,15 +58,100 @@ function Nav() {
           <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
         </div>
         <div className="flex items-center gap-3">
-          <a
-            href="#connect"
-            className="text-sm font-medium py-2 px-4 bg-brand text-primary-foreground rounded-full hover:bg-brand-dark transition-colors"
-          >
-            Try demo
-          </a>
+          {user ? (
+            <>
+              <span className="hidden sm:inline text-xs text-muted-foreground">
+                {user.name}
+              </span>
+              <button
+                onClick={signOut}
+                className="text-sm font-medium py-2 px-4 bg-surface-2 text-foreground rounded-full ring-1 ring-border hover:bg-accent transition-colors"
+              >
+                Sign out
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onSignInClick}
+              className="text-sm font-medium py-2 px-4 bg-brand text-primary-foreground rounded-full hover:bg-brand-dark transition-colors"
+            >
+              Sign in
+            </button>
+          )}
         </div>
       </div>
     </nav>
+  );
+}
+
+function AuthModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { signIn } = useApp();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+
+  if (!open) return null;
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    signIn({
+      name: name.trim() || email.split("@")[0],
+      email: email.trim(),
+    });
+    onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] grid place-items-center bg-background/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={submit}
+        className="w-full max-w-sm bg-surface-1 ring-1 ring-border rounded-2xl p-6 shadow-2xl"
+      >
+        <h3 className="text-lg font-semibold text-foreground">Sign in to OnePlaylist</h3>
+        <p className="text-sm text-muted-foreground mt-1 mb-5">
+          Quick demo sign-in. No password required.
+        </p>
+        <label className="block text-xs uppercase tracking-widest text-muted-foreground mb-1">
+          Name
+        </label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Your name"
+          className="w-full mb-3 px-3 py-2 bg-surface-2 rounded-lg ring-1 ring-border text-sm text-foreground outline-none focus:ring-brand"
+        />
+        <label className="block text-xs uppercase tracking-widest text-muted-foreground mb-1">
+          Email
+        </label>
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          type="email"
+          required
+          placeholder="you@example.com"
+          className="w-full mb-5 px-3 py-2 bg-surface-2 rounded-lg ring-1 ring-border text-sm text-foreground outline-none focus:ring-brand"
+        />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 py-2 text-sm rounded-lg bg-surface-2 text-foreground ring-1 ring-border hover:bg-accent"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="flex-1 py-2 text-sm font-semibold rounded-lg bg-brand text-primary-foreground hover:bg-brand-dark"
+          >
+            Continue
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -205,14 +292,15 @@ type Track = {
   artist: string;
   /** Platforms where the track natively exists in the source library. */
   sources: PlatformId[];
+  previewUrl: string;
 };
 
 const DEMO_TRACKS: Track[] = [
-  { n: "01", title: "Starlight Echoes", artist: "Solaris", sources: ["spotify", "apple", "yt", "amazon", "gaana"] },
-  { n: "02", title: "Midnight City Lights", artist: "Neon Drift", sources: ["spotify", "apple", "yt", "amazon"] },
-  { n: "03", title: "Ocean Floor Dreams", artist: "Submerged", sources: ["spotify", "yt", "amazon", "gaana"] },
-  { n: "04", title: "Paper Planes", artist: "Mira Vale", sources: ["spotify", "apple", "gaana"] },
-  { n: "05", title: "Velvet Static", artist: "Hollow Coast", sources: ["apple", "yt", "amazon", "gaana"] },
+  { n: "01", title: "Starlight Echoes", artist: "Solaris", sources: ["spotify", "apple", "yt", "amazon", "gaana"], previewUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" },
+  { n: "02", title: "Midnight City Lights", artist: "Neon Drift", sources: ["spotify", "apple", "yt", "amazon"], previewUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3" },
+  { n: "03", title: "Ocean Floor Dreams", artist: "Submerged", sources: ["spotify", "yt", "amazon", "gaana"], previewUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3" },
+  { n: "04", title: "Paper Planes", artist: "Mira Vale", sources: ["spotify", "apple", "gaana"], previewUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3" },
+  { n: "05", title: "Velvet Static", artist: "Hollow Coast", sources: ["apple", "yt", "amazon", "gaana"], previewUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3" },
 ];
 
 type SyncStatus = "idle" | "pending" | "matched" | "missing";
@@ -375,7 +463,8 @@ function DashboardPreview() {
                 key={t.n}
                 className="grid grid-cols-[1fr_auto] gap-4 items-center p-3 rounded-xl hover:bg-white/5 transition-colors"
               >
-                <div className="flex items-center gap-4 min-w-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <PlayButton track={t} />
                   <span className="text-xs font-mono w-6 text-muted-foreground/60">
                     {t.n}
                   </span>
@@ -681,10 +770,113 @@ function Footer() {
   );
 }
 
-function LandingPage() {
+function PlayButton({ track }: { track: Track }) {
+  const { player } = useApp();
+  const isCurrent = player.current?.id === track.n;
+  const isPlaying = isCurrent && player.playing;
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <Nav />
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        player.toggle({
+          id: track.n,
+          title: track.title,
+          artist: track.artist,
+          src: track.previewUrl,
+        });
+      }}
+      className={`size-9 rounded-full grid place-items-center transition-all shrink-0 ${
+        isCurrent
+          ? "bg-brand text-primary-foreground"
+          : "bg-surface-2 text-foreground hover:bg-brand hover:text-primary-foreground ring-1 ring-border"
+      }`}
+      aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
+    >
+      {isPlaying ? (
+        <svg viewBox="0 0 12 12" className="size-3" fill="currentColor">
+          <rect x="2" y="2" width="3" height="8" rx="0.5" />
+          <rect x="7" y="2" width="3" height="8" rx="0.5" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 12 12" className="size-3" fill="currentColor">
+          <path d="M3 2l7 4-7 4V2z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+function fmt(t: number) {
+  if (!isFinite(t)) return "0:00";
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function PlayerBar() {
+  const { player } = useApp();
+  if (!player.current) return null;
+  const pct = player.duration > 0 ? (player.progress / player.duration) * 100 : 0;
+  return (
+    <div className="fixed bottom-0 inset-x-0 z-40 border-t border-border bg-background/90 backdrop-blur-md">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm text-foreground truncate">{player.current.title}</div>
+          <div className="text-xs text-muted-foreground truncate">{player.current.artist}</div>
+        </div>
+        <button
+          onClick={() =>
+            player.playing ? player.pause() : player.play(player.current!)
+          }
+          className="size-10 rounded-full bg-brand text-primary-foreground grid place-items-center hover:bg-brand-dark transition-colors shrink-0"
+          aria-label={player.playing ? "Pause" : "Play"}
+        >
+          {player.playing ? (
+            <svg viewBox="0 0 12 12" className="size-3.5" fill="currentColor">
+              <rect x="2" y="2" width="3" height="8" rx="0.5" />
+              <rect x="7" y="2" width="3" height="8" rx="0.5" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 12 12" className="size-3.5" fill="currentColor">
+              <path d="M3 2l7 4-7 4V2z" />
+            </svg>
+          )}
+        </button>
+        <div className="hidden sm:flex items-center gap-2 flex-1 max-w-md">
+          <span className="text-[10px] font-mono text-muted-foreground tabular-nums w-9 text-right">
+            {fmt(player.progress)}
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={player.duration || 0}
+            value={player.progress}
+            onChange={(e) => player.seek(Number(e.target.value))}
+            className="flex-1 accent-brand"
+          />
+          <span className="text-[10px] font-mono text-muted-foreground tabular-nums w-9">
+            {fmt(player.duration)}
+          </span>
+        </div>
+      </div>
+      <div className="h-0.5 w-full bg-surface-2 sm:hidden">
+        <div className="h-full bg-brand" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function LandingShell() {
+  const { isAuthed } = useApp();
+  const [authOpen, setAuthOpen] = useState(false);
+
+  useEffect(() => {
+    if (isAuthed) setAuthOpen(false);
+  }, [isAuthed]);
+
+  return (
+    <div className="min-h-screen bg-background text-foreground pb-24">
+      <Nav onSignInClick={() => setAuthOpen(true)} />
       <main>
         <Hero />
         <ConnectPlatforms />
@@ -693,6 +885,16 @@ function LandingPage() {
         <Pricing />
       </main>
       <Footer />
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+      <PlayerBar />
     </div>
+  );
+}
+
+function LandingPage() {
+  return (
+    <AppProvider>
+      <LandingShell />
+    </AppProvider>
   );
 }

@@ -463,7 +463,8 @@ function DashboardPreview() {
                 key={t.n}
                 className="grid grid-cols-[1fr_auto] gap-4 items-center p-3 rounded-xl hover:bg-white/5 transition-colors"
               >
-                <div className="flex items-center gap-4 min-w-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <PlayButton track={t} />
                   <span className="text-xs font-mono w-6 text-muted-foreground/60">
                     {t.n}
                   </span>

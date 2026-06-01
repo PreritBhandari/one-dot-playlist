@@ -45,7 +45,8 @@ function Logo() {
   );
 }
 
-function Nav() {
+function Nav({ onSignInClick }: { onSignInClick: () => void }) {
+  const { user, signOut } = useApp();
   return (
     <nav className="fixed top-0 inset-x-0 z-50 border-b border-border bg-background/70 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -57,15 +58,100 @@ function Nav() {
           <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
         </div>
         <div className="flex items-center gap-3">
-          <a
-            href="#connect"
-            className="text-sm font-medium py-2 px-4 bg-brand text-primary-foreground rounded-full hover:bg-brand-dark transition-colors"
-          >
-            Try demo
-          </a>
+          {user ? (
+            <>
+              <span className="hidden sm:inline text-xs text-muted-foreground">
+                {user.name}
+              </span>
+              <button
+                onClick={signOut}
+                className="text-sm font-medium py-2 px-4 bg-surface-2 text-foreground rounded-full ring-1 ring-border hover:bg-accent transition-colors"
+              >
+                Sign out
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onSignInClick}
+              className="text-sm font-medium py-2 px-4 bg-brand text-primary-foreground rounded-full hover:bg-brand-dark transition-colors"
+            >
+              Sign in
+            </button>
+          )}
         </div>
       </div>
     </nav>
+  );
+}
+
+function AuthModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { signIn } = useApp();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+
+  if (!open) return null;
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    signIn({
+      name: name.trim() || email.split("@")[0],
+      email: email.trim(),
+    });
+    onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] grid place-items-center bg-background/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={submit}
+        className="w-full max-w-sm bg-surface-1 ring-1 ring-border rounded-2xl p-6 shadow-2xl"
+      >
+        <h3 className="text-lg font-semibold text-foreground">Sign in to OnePlaylist</h3>
+        <p className="text-sm text-muted-foreground mt-1 mb-5">
+          Quick demo sign-in. No password required.
+        </p>
+        <label className="block text-xs uppercase tracking-widest text-muted-foreground mb-1">
+          Name
+        </label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Your name"
+          className="w-full mb-3 px-3 py-2 bg-surface-2 rounded-lg ring-1 ring-border text-sm text-foreground outline-none focus:ring-brand"
+        />
+        <label className="block text-xs uppercase tracking-widest text-muted-foreground mb-1">
+          Email
+        </label>
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          type="email"
+          required
+          placeholder="you@example.com"
+          className="w-full mb-5 px-3 py-2 bg-surface-2 rounded-lg ring-1 ring-border text-sm text-foreground outline-none focus:ring-brand"
+        />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 py-2 text-sm rounded-lg bg-surface-2 text-foreground ring-1 ring-border hover:bg-accent"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="flex-1 py-2 text-sm font-semibold rounded-lg bg-brand text-primary-foreground hover:bg-brand-dark"
+          >
+            Continue
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 

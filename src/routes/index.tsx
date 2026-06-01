@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import coverResonance from "@/assets/cover-resonance.jpg";
 import { PLATFORMS, useConnections, type PlatformId } from "@/hooks/use-connections";
+import { AppProvider, useApp } from "@/hooks/use-app";
 
 export const Route = createFileRoute("/")({
   head: () => ({

@@ -40,6 +40,8 @@ type View =
   | { kind: "connect" }
   | { kind: "playlist"; id: string };
 
+type SourceFilter = "all" | PlatformId;
+
 function AppPage() {
   return (
     <AppProvider>
@@ -213,7 +215,7 @@ function Main({
       <div className="flex-1 overflow-y-auto">
         {view.kind === "home" && <HomeView setView={setView} />}
         {view.kind === "library" && <LibraryView />}
-        {view.kind === "connect" && <ConnectView />}
+        {view.kind === "connect" && <PlatformHub />}
         {view.kind === "playlist" && <PlaylistView id={view.id} setView={setView} />}
       </div>
     </main>
@@ -267,6 +269,8 @@ function HomeView({ setView }: { setView: (v: View) => void }) {
         </p>
       </header>
 
+      <PlatformIntegrationPanel onManage={() => setView({ kind: "connect" })} />
+
       <section>
         <div className="flex items-baseline justify-between mb-4">
           <h2 className="text-lg font-medium">Your playlists</h2>
@@ -310,6 +314,57 @@ function PlaylistCard({ playlist, onOpen }: { playlist: Playlist; onOpen: () => 
   );
 }
 
+function PlatformIntegrationPanel({ onManage }: { onManage: () => void }) {
+  const { connected, isConnected } = useConnections();
+
+  const sourceCount = (id: PlatformId) =>
+    LIBRARY.filter((song) => song.sources.includes(id)).length;
+
+  return (
+    <section className="rounded-3xl border border-white/10 bg-surface-2/70 p-4 ring-1 ring-border shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Platform integration</div>
+          <h2 className="text-xl font-semibold mt-2">All your services in one place</h2>
+          <p className="mt-2 text-sm text-muted-foreground max-w-2xl">
+            View which streaming platforms are connected, how many tracks are available from each service, and manage them from the Connections page.
+          </p>
+        </div>
+        <div>
+          <button
+            onClick={onManage}
+            className="h-9 rounded-full bg-surface-2 px-4 text-xs font-semibold text-foreground ring-1 ring-border hover:bg-surface-3"
+          >
+            Manage connections
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+        {PLATFORMS.map((platform) => {
+          const active = isConnected(platform.id);
+          return (
+            <div
+              key={platform.id}
+              className={`flex flex-col items-center gap-2 rounded-3xl border px-3 py-4 text-center ${
+                active
+                  ? "border-brand/40 bg-brand/10 text-foreground"
+                  : "border-border bg-background/50 text-muted-foreground"
+              }`}
+            >
+              <PlatformBadge platform={platform} present={active} size="lg" />
+              <div className="text-sm font-medium truncate">{platform.name}</div>
+              <div className="text-[11px] text-muted-foreground">
+                {sourceCount(platform.id)} tracks
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 /* -------------------------------- Library -------------------------------- */
 
 function LibraryView() {
@@ -344,9 +399,22 @@ function LibraryView() {
 
 /* ------------------------------ Connections ------------------------------ */
 
+const INTEGRATION_SCOPES: Record<PlatformId, string[]> = {
+  spotify: ["library", "playlists", "liked"],
+  apple: ["library", "playlists", "cloud"],
+  yt: ["library", "videos", "uploads"],
+  amazon: ["library", "playlists", "stations"],
+  gaana: ["library", "playlists", "favorites"],
+};
+
 function ConnectView() {
   const { connected, connect, disconnect, isConnected } = useConnections();
-  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState<Record<PlatformId, boolean>>(() => ({} as Record<PlatformId, boolean>));
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<Record<string, string>>({});
+
+  const sourceCount = (id: PlatformId) =>
+    LIBRARY.filter((song) => song.sources.includes(id)).length;
 
   const toggle = (id: PlatformId) => {
     if (isConnected(id)) return disconnect(id);
@@ -355,6 +423,25 @@ function ConnectView() {
       connect(id);
       setBusy((s) => ({ ...s, [id]: false }));
     }, 700);
+  };
+
+  const connectAll = () => {
+    setBusy(PLATFORMS.reduce((acc, p) => ({ ...acc, [p.id]: true }), {} as Record<PlatformId, boolean>));
+    window.setTimeout(() => {
+      PLATFORMS.forEach((p) => connect(p.id));
+      setBusy({} as Record<PlatformId, boolean>);
+    }, 700);
+  };
+
+  const syncAll = () => {
+    setSyncing(true);
+    window.setTimeout(() => {
+      const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      setLastSync(
+        connected.reduce((acc, id) => ({ ...acc, [id]: stamp }), {} as Record<string, string>),
+      );
+      setSyncing(false);
+    }, 900);
   };
 
   return (
@@ -399,12 +486,229 @@ function ConnectView() {
   );
 }
 
+function PlatformHub() {
+  const { connected, connect, disconnect, isConnected } = useConnections();
+  const [busy, setBusy] = useState<Record<PlatformId, boolean>>(() => ({} as Record<PlatformId, boolean>));
+  const [pending, setPending] = useState<Record<PlatformId, boolean>>(() => ({} as Record<PlatformId, boolean>));
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<Record<string, string>>({});
+
+  const SERVICE_AUTH_URLS: Record<PlatformId, string> = {
+    spotify: "https://accounts.spotify.com/login",
+    apple: "https://music.apple.com",
+    yt: "https://music.youtube.com",
+    amazon: "https://music.amazon.com",
+    gaana: "https://gaana.com/music",
+  };
+
+  const sourceCount = (id: PlatformId) =>
+    LIBRARY.filter((song) => song.sources.includes(id)).length;
+
+  const startServiceConnect = (platform: Platform) => {
+    setPending((s) => ({ ...s, [platform.id]: true }));
+    window.open(SERVICE_AUTH_URLS[platform.id], "_blank");
+  };
+
+  const confirmConnected = (id: PlatformId) => {
+    setBusy((s) => ({ ...s, [id]: true }));
+    window.setTimeout(() => {
+      connect(id);
+      setBusy((s) => ({ ...s, [id]: false }));
+      setPending((s) => ({ ...s, [id]: false }));
+    }, 700);
+  };
+
+  const connectAll = () => {
+    const targets = PLATFORMS.filter((p) => !isConnected(p.id));
+    setPending(targets.reduce((acc, p) => ({ ...acc, [p.id]: true }), {} as Record<PlatformId, boolean>));
+    targets.forEach((platform) => startServiceConnect(platform));
+  };
+
+  const syncAll = () => {
+    setSyncing(true);
+    window.setTimeout(() => {
+      const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      setLastSync(
+        connected.reduce((acc, id) => ({ ...acc, [id]: stamp }), {} as Record<string, string>),
+      );
+      setSyncing(false);
+    }, 900);
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6">
+      <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold mb-1">Connections</h1>
+          <p className="text-sm text-muted-foreground">
+            {connected.length} of {PLATFORMS.length} streaming services connected.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 rounded-md bg-surface-2/60 px-2 py-1.5 ring-1 ring-border">
+            {PLATFORMS.map((platform) => (
+              <PlatformBadge
+                key={platform.id}
+                platform={platform}
+                present={isConnected(platform.id)}
+              />
+            ))}
+          </div>
+          <button
+            onClick={connectAll}
+            className="h-9 rounded-md bg-foreground px-3 text-xs font-semibold text-background hover:opacity-90"
+          >
+            Open all sign-in pages
+          </button>
+          <button
+            onClick={syncAll}
+            disabled={connected.length === 0 || syncing}
+            className="h-9 rounded-md bg-brand px-3 text-xs font-semibold text-primary-foreground hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {syncing ? "Syncing" : "Sync connected"}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_18rem] gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-3">
+          {PLATFORMS.map((p) => {
+            const active = isConnected(p.id);
+            const isPending = pending[p.id];
+            return (
+              <div
+                key={p.id}
+                className={`p-4 rounded-xl ring-1 transition-all ${
+                  active ? "bg-surface-2 ring-brand/40" : "bg-surface-2/40 ring-border hover:bg-surface-2"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <PlatformBadge platform={p} size="lg" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{p.name}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {active ? "Connected" : isPending ? "Waiting for service auth" : "Not connected"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {active ? (
+                      <button
+                        onClick={() => disconnect(p.id)}
+                        className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-brand text-primary-foreground"
+                      >
+                        Disconnect
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => startServiceConnect(p)}
+                        disabled={isPending}
+                        className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-surface-2 text-muted-foreground hover:bg-surface-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Connect
+                      </button>
+                    )}
+                    {!active && isPending && (
+                      <button
+                        onClick={() => confirmConnected(p.id)}
+                        disabled={busy[p.id]}
+                        className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-foreground text-background hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Confirm connected
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <IntegrationMetric label="Tracks" value={sourceCount(p.id)} />
+                  <IntegrationMetric label="Lists" value={sourceCount(p.id)} />
+                  <IntegrationMetric label="Sync" value={lastSync[p.id] ?? (active ? "Ready" : "Off")} />
+                </div>
+                <div className="mt-4 flex flex-wrap gap-1">
+                  {INTEGRATION_SCOPES[p.id].map((scope) => (
+                    <span
+                      key={scope}
+                      className="rounded-md bg-background/40 px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground ring-1 ring-border"
+                    >
+                      {scope}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <IntegrationAction label="Import" disabled={!active} />
+                  <IntegrationAction label="Export" disabled={!active} />
+                  <IntegrationAction label="Match" disabled={!active} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="rounded-xl bg-background/35 p-4 ring-1 ring-border">
+          <div className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
+            Source bridge
+          </div>
+          <div className="mt-4 space-y-3">
+            {PLATFORMS.map((platform, index) => (
+              <div key={platform.id} className="flex items-center gap-3">
+                <PlatformBadge platform={platform} present={isConnected(platform.id)} />
+                <div className="h-1.5 flex-1 rounded-full bg-surface-2 overflow-hidden">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${isConnected(platform.id) ? 92 - index * 9 : 18}%`,
+                      backgroundColor: platform.colorVar,
+                    }}
+                  />
+                </div>
+                <span className="w-10 text-right text-[10px] font-mono text-muted-foreground">
+                  {sourceCount(platform.id)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-5 text-xs leading-5 text-muted-foreground">
+            Demo connectors are wired to the local library: connect, sync, import, export, match,
+            filter, and play availability all use the same platform source map.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IntegrationMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg bg-background/35 px-2 py-2 ring-1 ring-border">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-1 truncate text-sm font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function IntegrationAction({ label, disabled }: { label: string; disabled: boolean }) {
+  return (
+    <button
+      disabled={disabled}
+      className="rounded-md bg-surface-2 px-2 py-1.5 text-[11px] font-medium text-foreground ring-1 ring-border hover:bg-accent disabled:cursor-not-allowed disabled:opacity-35"
+    >
+      {label}
+    </button>
+  );
+}
+
 /* -------------------------------- Playlist ------------------------------- */
 
 function PlaylistView({ id, setView }: { id: string; setView: (v: View) => void }) {
   const { playlists } = useApp();
   const p = playlists.playlists.find((x) => x.id === id);
   const { player } = useApp();
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+
+  useEffect(() => {
+    setSourceFilter("all");
+  }, [id]);
 
   if (!p) {
     return (
@@ -418,11 +722,15 @@ function PlaylistView({ id, setView }: { id: string; setView: (v: View) => void 
   }
 
   const songs = p.songIds.map(songById).filter(Boolean) as Song[];
+  const visibleSongs =
+    sourceFilter === "all"
+      ? songs
+      : songs.filter((song) => song.sources.includes(sourceFilter));
   const totalSec = songs.reduce((a, b) => a + b.duration, 0);
 
   const playAll = () => {
-    if (songs.length === 0) return;
-    const s = songs[0];
+    if (visibleSongs.length === 0) return;
+    const s = visibleSongs[0];
     player.play({ id: s.id, title: s.title, artist: s.artist, src: s.previewUrl });
   };
 
@@ -442,7 +750,7 @@ function PlaylistView({ id, setView }: { id: string; setView: (v: View) => void 
           <div className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
             Playlist
           </div>
-          <h1 className="text-3xl lg:text-5xl font-bold mt-2 break-words">{p.name}</h1>
+          <h1 className="text-3xl lg:text-5xl font-bold mt-2 wrap-break-word">{p.name}</h1>
           {p.description && (
             <p className="text-sm text-muted-foreground mt-2">{p.description}</p>
           )}
@@ -466,15 +774,91 @@ function PlaylistView({ id, setView }: { id: string; setView: (v: View) => void 
         <AddSongMenu playlistId={p.id} />
       </div>
 
+      <div className="px-6 lg:px-8 pb-4">
+        <SourceFilterBar
+          songs={songs}
+          value={sourceFilter}
+          onChange={setSourceFilter}
+        />
+      </div>
+
       <div className="px-2 lg:px-6 pb-8">
         {songs.length === 0 ? (
           <div className="px-6 py-12 text-center">
             <p className="text-muted-foreground text-sm">This playlist is empty.</p>
             <p className="text-muted-foreground text-xs mt-1">Use "Add songs" above to fill it.</p>
           </div>
+        ) : visibleSongs.length === 0 ? (
+          <div className="px-6 py-12 text-center">
+            <p className="text-muted-foreground text-sm">No songs from this source.</p>
+            <p className="text-muted-foreground text-xs mt-1">
+              Pick another platform or show all sources.
+            </p>
+          </div>
         ) : (
-          <TrackList songs={songs} playlistId={p.id} />
+          <TrackList songs={visibleSongs} playlistId={p.id} />
         )}
+      </div>
+    </div>
+  );
+}
+
+function SourceFilterBar({
+  songs, value, onChange,
+}: { songs: Song[]; value: SourceFilter; onChange: (value: SourceFilter) => void }) {
+  const counts = PLATFORMS.reduce(
+    (acc, platform) => {
+      acc[platform.id] = songs.filter((song) => song.sources.includes(platform.id)).length;
+      return acc;
+    },
+    {} as Record<PlatformId, number>,
+  );
+  const visibleCount =
+    value === "all" ? songs.length : songs.filter((song) => song.sources.includes(value)).length;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
+          Filter by source
+        </span>
+        <span className="text-xs text-muted-foreground">
+          Showing {visibleCount} of {songs.length}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => onChange("all")}
+          className={`h-8 rounded-md px-3 text-xs font-medium ring-1 transition-colors ${
+            value === "all"
+              ? "bg-foreground text-background ring-foreground"
+              : "bg-surface-2/60 text-muted-foreground ring-border hover:text-foreground hover:bg-surface-2"
+          }`}
+        >
+          All sources
+          <span className="ml-2 font-mono opacity-70">{songs.length}</span>
+        </button>
+        {PLATFORMS.map((platform) => {
+          const active = value === platform.id;
+          const count = counts[platform.id];
+          return (
+            <button
+              key={platform.id}
+              onClick={() => onChange(platform.id)}
+              disabled={count === 0}
+              className={`h-8 rounded-md px-2.5 text-xs font-medium ring-1 transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
+                active
+                  ? "bg-foreground text-background ring-foreground"
+                  : "bg-surface-2/60 text-muted-foreground ring-border hover:text-foreground hover:bg-surface-2"
+              }`}
+            >
+              <span className="inline-flex items-center gap-2" title={platform.name}>
+                <PlatformBadge platform={platform} />
+                <span className="font-mono opacity-70">{count}</span>
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -515,6 +899,9 @@ function AddSongMenu({ playlistId }: { playlistId: string }) {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm truncate">{s.title}</div>
                   <div className="text-[11px] text-muted-foreground truncate">{s.artist}</div>
+                  <div className="mt-1">
+                    <SourceBadges sources={s.sources} compact />
+                  </div>
                 </div>
                 <span className="text-brand text-lg leading-none">＋</span>
               </button>
@@ -534,7 +921,7 @@ function TrackList({
   return (
     <div className="space-y-px">
       {!compact && (
-        <div className="hidden md:grid grid-cols-[2rem_1fr_1fr_auto_3rem] gap-4 px-4 py-2 text-[10px] font-mono uppercase tracking-widest text-muted-foreground border-b border-border">
+        <div className="hidden md:grid grid-cols-[2rem_minmax(12rem,1.2fr)_minmax(8rem,1fr)_minmax(17rem,auto)_3rem] gap-4 px-4 py-2 text-[10px] font-mono uppercase tracking-widest text-muted-foreground border-b border-border">
           <div>#</div>
           <div>Title</div>
           <div>Album</div>
@@ -593,14 +980,14 @@ function TrackRow({
           </div>
           <div className="text-xs text-muted-foreground truncate">{song.artist}</div>
         </div>
-        <SourceBadges sources={song.sources} />
+        <SourceBadges sources={song.sources} compact />
       </button>
     );
   }
 
   return (
     <div
-      className={`grid grid-cols-[2rem_1fr_auto] md:grid-cols-[2rem_1fr_1fr_auto_3rem] gap-4 items-center px-4 py-2 rounded-md group ${
+      className={`grid grid-cols-[2rem_minmax(0,1fr)] md:grid-cols-[2rem_minmax(12rem,1.2fr)_minmax(8rem,1fr)_minmax(17rem,auto)_3rem] gap-4 items-center px-4 py-2 rounded-md group ${
         isCurrent ? "bg-surface-2/60" : "hover:bg-surface-2/60"
       }`}
     >
@@ -616,15 +1003,28 @@ function TrackRow({
       </div>
       <div className="flex items-center gap-3 min-w-0">
         <div className="size-10 rounded-md shrink-0" style={{ background: song.cover }} />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className={`text-sm truncate ${isCurrent ? "text-brand" : "text-foreground"}`}>
             {song.title}
           </div>
           <div className="text-xs text-muted-foreground truncate">{song.artist}</div>
+          <div className="mt-1 md:hidden">
+            <SourceBadges sources={song.sources} />
+          </div>
         </div>
+        {playlistId && (
+          <button
+            onClick={() => playlists.removeSong(playlistId, song.id)}
+            className="md:hidden text-muted-foreground hover:text-foreground text-xs transition-colors"
+            aria-label="Remove from playlist"
+            title="Remove"
+          >
+            Ã—
+          </button>
+        )}
       </div>
       <div className="hidden md:block text-xs text-muted-foreground truncate">{song.album}</div>
-      <div className="flex items-center gap-1.5">
+      <div className="hidden md:flex items-center gap-1.5">
         <SourceBadges sources={song.sources} />
         {playlistId && (
           <button
@@ -644,34 +1044,103 @@ function TrackRow({
   );
 }
 
-function SourceBadges({ sources }: { sources: PlatformId[] }) {
+function SourceBadges({
+  sources, compact = false,
+}: { sources: PlatformId[]; compact?: boolean }) {
+  const platforms = PLATFORMS.filter((p) => sources.includes(p.id));
+
   return (
-    <div className="flex items-center gap-1">
-      {PLATFORMS.map((p) => (
-        <PlatformBadge
-          key={p.id}
-          platform={p}
-          present={sources.includes(p.id)}
-        />
+    <div className={`flex flex-wrap items-center gap-1 ${compact ? "max-w-52" : ""}`}>
+      {platforms.map((platform) => (
+        <SourceChip key={platform.id} platform={platform} compact={compact} />
       ))}
     </div>
+  );
+}
+
+function SourceChip({
+  platform, compact = false,
+}: { platform: Platform; compact?: boolean }) {
+  return (
+    <span
+      title={platform.name}
+      aria-label={platform.name}
+      className={`inline-grid place-items-center rounded-md ring-1 ring-border text-background shrink-0 ${
+        compact ? "size-5" : "size-6"
+      }`}
+      style={{ backgroundColor: platform.colorVar }}
+    >
+      <PlatformLogo platform={platform} className={compact ? "size-3" : "size-3.5"} />
+    </span>
   );
 }
 
 function PlatformBadge({
   platform, present = true, size = "sm",
 }: { platform: Platform; present?: boolean; size?: "sm" | "lg" }) {
-  const dim = size === "lg" ? "size-10 text-[11px]" : "size-5 text-[8px]";
+  const dim = size === "lg" ? "size-10" : "size-5";
+  const logoSize = size === "lg" ? "size-6" : "size-3";
   return (
     <span
       title={`${platform.name}${present ? "" : " · not available"}`}
-      className={`${dim} rounded grid place-items-center font-bold text-background shrink-0 transition-opacity ${
+      aria-label={platform.name}
+      className={`${dim} rounded grid place-items-center text-background shrink-0 transition-opacity ${
         present ? "opacity-100" : "opacity-15 grayscale"
       }`}
       style={{ backgroundColor: platform.colorVar }}
     >
-      {platform.short}
+      <PlatformLogo platform={platform} className={logoSize} />
     </span>
+  );
+}
+
+function PlatformLogo({
+  platform, className,
+}: { platform: Platform; className: string }) {
+  if (platform.id === "spotify") {
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <path d="M5 8.5c4.4-1.3 9.3-.8 13 1.3" />
+        <path d="M6.2 12c3.4-1 7.4-.6 10.2 1" />
+        <path d="M7.5 15.3c2.2-.6 4.8-.4 6.8.7" />
+      </svg>
+    );
+  }
+
+  if (platform.id === "apple") {
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+        <path d="M16.4 12.5c0-2 1.6-3 1.7-3.1-1-.1-2.5.6-3.1.6-.7 0-1.7-.6-2.8-.6-2.2 0-4.2 1.8-4.2 4.7 0 1.4.5 2.9 1.2 3.9.6.9 1.4 2 2.4 2s1.4-.6 2.6-.6 1.5.6 2.6.6 1.8-1 2.4-1.9c.7-1 1-2 1-2.1-.1 0-3.8-1.4-3.8-4.5Z" />
+        <path d="M14.8 7.8c.5-.6.9-1.5.8-2.3-.8 0-1.7.5-2.2 1.1-.5.6-.9 1.4-.8 2.2.8.1 1.6-.4 2.2-1Z" />
+      </svg>
+    );
+  }
+
+  if (platform.id === "yt") {
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path d="M10 8.5v7l6-3.5-6-3.5Z" />
+      </svg>
+    );
+  }
+
+  if (platform.id === "amazon") {
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M7 9.2c1.2-1 2.8-1.5 4.7-1.5 2.9 0 4.8 1.7 4.8 4.2V17" />
+        <path d="M16.5 12.2c-1.1-.5-2.3-.7-3.7-.5-2.4.3-3.8 1.4-3.8 3.1 0 1.5 1.2 2.6 3 2.6 1.9 0 3.4-1.1 4.5-3.2" />
+        <path d="M5.5 19c4.2 1.9 8.5 1.9 13 0" />
+        <path d="M17.2 18.2l1.7.7-1.1 1.4" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M15.6 9.1a4.6 4.6 0 1 0 .3 5.4h-3.7v-2.2h6.2c.1.5.1.8.1 1.2 0 3.7-2.6 6.4-6.2 6.4A7.1 7.1 0 1 1 17.5 8l-1.9 1.1Z" />
+    </svg>
   );
 }
 
@@ -724,59 +1193,138 @@ function fmt(t: number) {
   return `${m}:${s}`;
 }
 
+function PrevGlyph() {
+  return (
+    <svg viewBox="0 0 12 12" className="size-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 3L4 6l4 3" />
+    </svg>
+  );
+}
+
+function NextGlyph() {
+  return (
+    <svg viewBox="0 0 12 12" className="size-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 3l4 3-4 3" />
+    </svg>
+  );
+}
+
 function PlayerBar() {
   const { player } = useApp();
   const current = player.current;
   const song = current ? LIBRARY.find((s) => s.id === current.id) : null;
+  const currentIndex = song ? LIBRARY.findIndex((s) => s.id === song.id) : -1;
+  const canPrev = currentIndex > 0;
+  const canNext = currentIndex >= 0 && currentIndex < LIBRARY.length - 1;
+
+  const playNext = () => {
+    if (canNext && song) {
+      const nextSong = LIBRARY[currentIndex + 1];
+      player.play({ id: nextSong.id, title: nextSong.title, artist: nextSong.artist, src: nextSong.previewUrl });
+    }
+  };
+
+  const playPrev = () => {
+    if (canPrev && song) {
+      const prevSong = LIBRARY[currentIndex - 1];
+      player.play({ id: prevSong.id, title: prevSong.title, artist: prevSong.artist, src: prevSong.previewUrl });
+    }
+  };
+
   return (
-    <div className="h-20 shrink-0 border-t border-border bg-surface-1 px-4 flex items-center gap-4">
-      <div className="flex items-center gap-3 min-w-0 w-1/3">
-        {song && (
-          <div className="size-12 rounded-md shrink-0" style={{ background: song.cover }} />
-        )}
-        <div className="min-w-0">
-          <div className="text-sm text-foreground truncate">
-            {current?.title ?? "—"}
+    <div className="border-t border-border/40 bg-background/65 backdrop-blur-xl px-3 py-2">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 rounded-3xl border border-white/10 bg-white/10 px-3 py-2 shadow-[0_18px_42px_-28px_rgba(15,23,42,0.8)] backdrop-blur-2xl">
+        <div className="flex min-w-0 items-center gap-3">
+          <div
+            className="h-12 w-12 shrink-0 overflow-hidden rounded-3xl bg-surface-3 ring-1 ring-border"
+            style={{
+              backgroundImage: song ? `url(${song.cover})` : "none",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
+          >
+            {!song && (
+              <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground px-2">
+                No art
+              </div>
+            )}
           </div>
-          <div className="text-xs text-muted-foreground truncate">
-            {current?.artist ?? "Pick a song to start"}
+          <div className="min-w-0">
+            <div className="text-[9px] uppercase tracking-[0.32em] text-muted-foreground">
+              Now playing
+            </div>
+            <div className="truncate text-sm font-semibold text-foreground">
+              {current?.title ?? "Select a song to start"}
+            </div>
+            <div className="truncate text-[10px] text-muted-foreground">
+              {current?.artist ?? "Browse your library"}
+            </div>
           </div>
         </div>
-        {song && <SourceBadges sources={song.sources} />}
-      </div>
 
-      <div className="flex-1 flex flex-col items-center gap-1">
-        <button
-          onClick={() => {
-            if (!current) return;
-            player.playing ? player.pause() : player.play(current);
-          }}
-          disabled={!current}
-          className="size-9 rounded-full bg-foreground text-background grid place-items-center hover:scale-105 transition-transform disabled:opacity-30"
-          aria-label={player.playing ? "Pause" : "Play"}
-        >
-          {player.playing ? <PauseGlyph /> : <PlayGlyph />}
-        </button>
-        <div className="flex items-center gap-2 w-full max-w-lg">
-          <span className="text-[10px] font-mono text-muted-foreground tabular-nums w-9 text-right">
-            {fmt(player.progress)}
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={player.duration || 0}
-            value={player.progress}
-            onChange={(e) => player.seek(Number(e.target.value))}
-            className="flex-1 accent-brand"
-            disabled={!current}
-          />
-          <span className="text-[10px] font-mono text-muted-foreground tabular-nums w-9">
-            {fmt(player.duration)}
-          </span>
+        <div className="flex flex-1 items-center gap-3 sm:max-w-2xl">
+          <div className="flex items-center gap-2 rounded-full bg-background/80 px-2 py-1.5 ring-1 ring-border shadow-sm">
+            <button
+              onClick={playPrev}
+              disabled={!canPrev}
+              className="size-8 rounded-full bg-surface-3 text-muted-foreground grid place-items-center hover:bg-surface-4 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Previous"
+            >
+              <PrevGlyph />
+            </button>
+            <button
+              onClick={() => {
+                if (!current) return;
+                player.playing ? player.pause() : player.play(current);
+              }}
+              disabled={!current}
+              className="size-10 rounded-full bg-foreground text-background grid place-items-center hover:scale-105 transition-transform disabled:opacity-30"
+              aria-label={player.playing ? "Pause" : "Play"}
+            >
+              {player.playing ? <PauseGlyph /> : <PlayGlyph />}
+            </button>
+            <button
+              onClick={playNext}
+              disabled={!canNext}
+              className="size-8 rounded-full bg-surface-3 text-muted-foreground grid place-items-center hover:bg-surface-4 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Next"
+            >
+              <NextGlyph />
+            </button>
+          </div>
+
+          <div className="flex flex-1 min-w-0 items-center gap-2">
+            <span className="hidden sm:block text-[10px] font-mono text-muted-foreground tabular-nums w-11 text-right">
+              {fmt(player.progress)}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={player.duration || 0}
+              value={player.progress}
+              onChange={(e) => player.seek(Number(e.target.value))}
+              className="h-1 w-full rounded-full accent-brand"
+              disabled={!current}
+            />
+            <span className="hidden sm:block text-[10px] font-mono text-muted-foreground tabular-nums w-11 text-left">
+              {fmt(player.duration)}
+            </span>
+          </div>
+        </div>
+
+        <div className="hidden sm:flex flex-col items-end gap-1 min-w-36">
+          {song ? (
+            <>
+              <div className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">
+                Playing from
+              </div>
+              <SourceBadges sources={song.sources.slice(0, 1)} compact />
+            </>
+          ) : (
+            <div className="text-[10px] text-muted-foreground">Choose a track to start.</div>
+          )}
         </div>
       </div>
-
-      <div className="hidden md:block w-1/3" />
     </div>
   );
 }
@@ -802,7 +1350,7 @@ function AuthModal({ open, onClose }: { open: boolean; onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-[60] grid place-items-center bg-background/80 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-60 grid place-items-center bg-background/80 backdrop-blur-sm p-4"
       onClick={onClose}
     >
       <form

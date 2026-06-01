@@ -40,6 +40,21 @@ export function useConnections() {
     }
   }, []);
 
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const incoming = params.get("connected") as PlatformId | null;
+      if (incoming && PLATFORMS.some((p) => p.id === incoming) && !connected.includes(incoming)) {
+        persist([...connected, incoming]);
+        params.delete("connected");
+        const url = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+        window.history.replaceState({}, "", url);
+      }
+    } catch {
+      /* noop */
+    }
+  }, [connected, persist]);
+
   const connect = useCallback(
     (id: PlatformId) => {
       if (connected.includes(id)) return;

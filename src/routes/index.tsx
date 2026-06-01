@@ -770,10 +770,113 @@ function Footer() {
   );
 }
 
-function LandingPage() {
+function PlayButton({ track }: { track: Track }) {
+  const { player } = useApp();
+  const isCurrent = player.current?.id === track.n;
+  const isPlaying = isCurrent && player.playing;
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <Nav />
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        player.toggle({
+          id: track.n,
+          title: track.title,
+          artist: track.artist,
+          src: track.previewUrl,
+        });
+      }}
+      className={`size-9 rounded-full grid place-items-center transition-all shrink-0 ${
+        isCurrent
+          ? "bg-brand text-primary-foreground"
+          : "bg-surface-2 text-foreground hover:bg-brand hover:text-primary-foreground ring-1 ring-border"
+      }`}
+      aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
+    >
+      {isPlaying ? (
+        <svg viewBox="0 0 12 12" className="size-3" fill="currentColor">
+          <rect x="2" y="2" width="3" height="8" rx="0.5" />
+          <rect x="7" y="2" width="3" height="8" rx="0.5" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 12 12" className="size-3" fill="currentColor">
+          <path d="M3 2l7 4-7 4V2z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+function fmt(t: number) {
+  if (!isFinite(t)) return "0:00";
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function PlayerBar() {
+  const { player } = useApp();
+  if (!player.current) return null;
+  const pct = player.duration > 0 ? (player.progress / player.duration) * 100 : 0;
+  return (
+    <div className="fixed bottom-0 inset-x-0 z-40 border-t border-border bg-background/90 backdrop-blur-md">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm text-foreground truncate">{player.current.title}</div>
+          <div className="text-xs text-muted-foreground truncate">{player.current.artist}</div>
+        </div>
+        <button
+          onClick={() =>
+            player.playing ? player.pause() : player.play(player.current!)
+          }
+          className="size-10 rounded-full bg-brand text-primary-foreground grid place-items-center hover:bg-brand-dark transition-colors shrink-0"
+          aria-label={player.playing ? "Pause" : "Play"}
+        >
+          {player.playing ? (
+            <svg viewBox="0 0 12 12" className="size-3.5" fill="currentColor">
+              <rect x="2" y="2" width="3" height="8" rx="0.5" />
+              <rect x="7" y="2" width="3" height="8" rx="0.5" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 12 12" className="size-3.5" fill="currentColor">
+              <path d="M3 2l7 4-7 4V2z" />
+            </svg>
+          )}
+        </button>
+        <div className="hidden sm:flex items-center gap-2 flex-1 max-w-md">
+          <span className="text-[10px] font-mono text-muted-foreground tabular-nums w-9 text-right">
+            {fmt(player.progress)}
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={player.duration || 0}
+            value={player.progress}
+            onChange={(e) => player.seek(Number(e.target.value))}
+            className="flex-1 accent-brand"
+          />
+          <span className="text-[10px] font-mono text-muted-foreground tabular-nums w-9">
+            {fmt(player.duration)}
+          </span>
+        </div>
+      </div>
+      <div className="h-0.5 w-full bg-surface-2 sm:hidden">
+        <div className="h-full bg-brand" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function LandingShell() {
+  const { isAuthed } = useApp();
+  const [authOpen, setAuthOpen] = useState(false);
+
+  useEffect(() => {
+    if (isAuthed) setAuthOpen(false);
+  }, [isAuthed]);
+
+  return (
+    <div className="min-h-screen bg-background text-foreground pb-24">
+      <Nav onSignInClick={() => setAuthOpen(true)} />
       <main>
         <Hero />
         <ConnectPlatforms />
@@ -782,6 +885,16 @@ function LandingPage() {
         <Pricing />
       </main>
       <Footer />
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+      <PlayerBar />
     </div>
+  );
+}
+
+function LandingPage() {
+  return (
+    <AppProvider>
+      <LandingShell />
+    </AppProvider>
   );
 }

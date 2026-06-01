@@ -292,14 +292,15 @@ type Track = {
   artist: string;
   /** Platforms where the track natively exists in the source library. */
   sources: PlatformId[];
+  previewUrl: string;
 };
 
 const DEMO_TRACKS: Track[] = [
-  { n: "01", title: "Starlight Echoes", artist: "Solaris", sources: ["spotify", "apple", "yt", "amazon", "gaana"] },
-  { n: "02", title: "Midnight City Lights", artist: "Neon Drift", sources: ["spotify", "apple", "yt", "amazon"] },
-  { n: "03", title: "Ocean Floor Dreams", artist: "Submerged", sources: ["spotify", "yt", "amazon", "gaana"] },
-  { n: "04", title: "Paper Planes", artist: "Mira Vale", sources: ["spotify", "apple", "gaana"] },
-  { n: "05", title: "Velvet Static", artist: "Hollow Coast", sources: ["apple", "yt", "amazon", "gaana"] },
+  { n: "01", title: "Starlight Echoes", artist: "Solaris", sources: ["spotify", "apple", "yt", "amazon", "gaana"], previewUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" },
+  { n: "02", title: "Midnight City Lights", artist: "Neon Drift", sources: ["spotify", "apple", "yt", "amazon"], previewUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3" },
+  { n: "03", title: "Ocean Floor Dreams", artist: "Submerged", sources: ["spotify", "yt", "amazon", "gaana"], previewUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3" },
+  { n: "04", title: "Paper Planes", artist: "Mira Vale", sources: ["spotify", "apple", "gaana"], previewUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3" },
+  { n: "05", title: "Velvet Static", artist: "Hollow Coast", sources: ["apple", "yt", "amazon", "gaana"], previewUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3" },
 ];
 
 type SyncStatus = "idle" | "pending" | "matched" | "missing";

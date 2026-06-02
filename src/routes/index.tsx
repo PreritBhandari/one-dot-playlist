@@ -234,6 +234,11 @@ function Main({
         {view.kind === "home" && <HomeView setView={setView} />}
         {view.kind === "library" && <LibraryView />}
         {view.kind === "connect" && <PlatformHub />}
+        {view.kind === "search" && <SearchView />}
+        {view.kind === "spotify" && <SpotifyHomeView setView={setView} />}
+        {view.kind === "spotify-playlist" && (
+          <SpotifyPlaylistView id={view.id} name={view.name} setView={setView} />
+        )}
         {view.kind === "playlist" && <PlaylistView id={view.id} setView={setView} />}
       </div>
     </main>

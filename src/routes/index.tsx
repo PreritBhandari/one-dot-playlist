@@ -627,7 +627,14 @@ function PlatformHub() {
                   <div className="flex items-center gap-2">
                     {active ? (
                       <button
-                        onClick={() => disconnect(p.id)}
+                        onClick={() => {
+                          disconnect(p.id);
+                          if (p.id === "spotify") {
+                            try {
+                              localStorage.removeItem("oneplaylist:spotify:token");
+                            } catch { /* noop */ }
+                          }
+                        }}
                         className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-brand text-primary-foreground"
                       >
                         Disconnect

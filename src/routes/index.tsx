@@ -9,6 +9,9 @@ import {
   type Playlist,
   type Song,
 } from "@/hooks/use-library";
+import { beginSpotifyLogin, type SpotifyTrack } from "@/lib/spotify";
+import { searchYouTube, type YouTubeResult } from "@/lib/youtube";
+import { getPlaylistTracks } from "@/lib/spotify";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -38,6 +41,9 @@ type View =
   | { kind: "home" }
   | { kind: "library" }
   | { kind: "connect" }
+  | { kind: "search" }
+  | { kind: "spotify" }
+  | { kind: "spotify-playlist"; id: string; name: string }
   | { kind: "playlist"; id: string };
 
 type SourceFilter = "all" | PlatformId;
@@ -98,10 +104,22 @@ function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) 
           label="Home"
         />
         <NavItem
+          active={view.kind === "search"}
+          onClick={() => setView({ kind: "search" })}
+          icon={<SearchIcon />}
+          label="Search"
+        />
+        <NavItem
           active={view.kind === "library"}
           onClick={() => setView({ kind: "library" })}
           icon={<SearchIcon />}
           label="All Songs"
+        />
+        <NavItem
+          active={view.kind === "spotify"}
+          onClick={() => setView({ kind: "spotify" })}
+          icon={<PlugIcon />}
+          label="Spotify"
         />
         <NavItem
           active={view.kind === "connect"}
@@ -216,6 +234,11 @@ function Main({
         {view.kind === "home" && <HomeView setView={setView} />}
         {view.kind === "library" && <LibraryView />}
         {view.kind === "connect" && <PlatformHub />}
+        {view.kind === "search" && <SearchView />}
+        {view.kind === "spotify" && <SpotifyHomeView setView={setView} />}
+        {view.kind === "spotify-playlist" && (
+          <SpotifyPlaylistView id={view.id} name={view.name} setView={setView} />
+        )}
         {view.kind === "playlist" && <PlaylistView id={view.id} setView={setView} />}
       </div>
     </main>
@@ -505,6 +528,15 @@ function PlatformHub() {
     LIBRARY.filter((song) => song.sources.includes(id)).length;
 
   const startServiceConnect = (platform: Platform) => {
+    if (platform.id === "spotify") {
+      void beginSpotifyLogin();
+      return;
+    }
+    if (platform.id === "yt") {
+      // YouTube uses API key auth — just enable it
+      connect("yt");
+      return;
+    }
     setPending((s) => ({ ...s, [platform.id]: true }));
     window.open(SERVICE_AUTH_URLS[platform.id], "_blank");
   };
@@ -595,7 +627,14 @@ function PlatformHub() {
                   <div className="flex items-center gap-2">
                     {active ? (
                       <button
-                        onClick={() => disconnect(p.id)}
+                        onClick={() => {
+                          disconnect(p.id);
+                          if (p.id === "spotify") {
+                            try {
+                              localStorage.removeItem("oneplaylist:spotify:token");
+                            } catch { /* noop */ }
+                          }
+                        }}
                         className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-brand text-primary-foreground"
                       >
                         Disconnect
@@ -1394,6 +1433,402 @@ function AuthModal({ open, onClose }: { open: boolean; onClose: () => void }) {
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+/* ============================================================ */
+/*  REAL INTEGRATIONS — Spotify + YouTube                       */
+/* ============================================================ */
+
+function SpotifyHomeView({ setView }: { setView: (v: View) => void }) {
+  const { spotify } = useApp();
+
+  if (!spotify.isAuthed) {
+    return (
+      <div className="p-8 max-w-xl">
+        <h1 className="text-3xl font-semibold mb-2">Spotify</h1>
+        <p className="text-sm text-muted-foreground mb-6">
+          Connect your Spotify account to see your real playlists, tracks and
+          play 30-second previews right here.
+        </p>
+        <button
+          onClick={() => beginSpotifyLogin()}
+          className="px-4 py-2.5 rounded-full bg-[#1DB954] text-black font-semibold text-sm hover:opacity-90"
+        >
+          Connect Spotify
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 lg:p-8">
+      <div className="flex items-end justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-3xl font-semibold">
+            {spotify.user?.display_name
+              ? `${spotify.user.display_name}'s Spotify`
+              : "Your Spotify"}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {spotify.loading
+              ? "Loading…"
+              : `${spotify.playlists.length} playlist${spotify.playlists.length === 1 ? "" : "s"}`}
+          </p>
+        </div>
+        <button
+          onClick={() => spotify.refresh()}
+          className="text-xs px-3 py-1.5 rounded-full bg-surface-2 ring-1 ring-border hover:bg-accent"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {spotify.error && (
+        <div className="mb-4 px-3 py-2 rounded-md bg-red-500/10 text-red-400 text-xs ring-1 ring-red-500/30">
+          {spotify.error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        {spotify.playlists.map((p) => {
+          const img = p.images?.[0]?.url;
+          return (
+            <button
+              key={p.id}
+              onClick={() => setView({ kind: "spotify-playlist", id: p.id, name: p.name })}
+              className="text-left bg-surface-2/40 hover:bg-surface-2 rounded-xl p-3 ring-1 ring-border group"
+            >
+              <div
+                className="aspect-square rounded-lg mb-3 ring-1 ring-border shadow-lg bg-surface-3"
+                style={img ? { backgroundImage: `url(${img})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
+              />
+              <div className="text-sm font-medium truncate">{p.name}</div>
+              <div className="text-xs text-muted-foreground truncate">
+                {p.tracks.total} tracks · {p.owner.display_name ?? "—"}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SpotifyPlaylistView({
+  id, name, setView,
+}: { id: string; name: string; setView: (v: View) => void }) {
+  const { player } = useApp();
+  const [tracks, setTracks] = useState<SpotifyTrack[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancel = false;
+    setTracks(null);
+    setError(null);
+    getPlaylistTracks(id)
+      .then((t) => { if (!cancel) setTracks(t); })
+      .catch((e: Error) => { if (!cancel) setError(e.message); });
+    return () => { cancel = true; };
+  }, [id]);
+
+  return (
+    <div className="p-6 lg:p-8">
+      <button
+        onClick={() => setView({ kind: "spotify" })}
+        className="text-xs text-muted-foreground hover:text-foreground mb-3"
+      >
+        ← Back to Spotify
+      </button>
+      <h1 className="text-3xl font-semibold mb-1">{name}</h1>
+      <p className="text-sm text-muted-foreground mb-6">Live from Spotify</p>
+
+      {error && (
+        <div className="mb-4 px-3 py-2 rounded-md bg-red-500/10 text-red-400 text-xs ring-1 ring-red-500/30">
+          {error}
+        </div>
+      )}
+      {!tracks && !error && (
+        <div className="text-sm text-muted-foreground">Loading tracks…</div>
+      )}
+      {tracks && tracks.length === 0 && (
+        <div className="text-sm text-muted-foreground">No tracks in this playlist.</div>
+      )}
+
+      <div className="space-y-px">
+        {tracks?.map((t, i) => {
+          const cover = t.album.images?.[2]?.url ?? t.album.images?.[0]?.url;
+          const isCurrent = player.current?.id === `sp:${t.id}`;
+          const isPlaying = isCurrent && player.playing;
+          const hasPreview = !!t.preview_url;
+          const onPlay = () => {
+            if (!t.preview_url) return;
+            player.toggle({
+              id: `sp:${t.id}`,
+              title: t.name,
+              artist: t.artists.map((a) => a.name).join(", "),
+              src: t.preview_url,
+            });
+          };
+          return (
+            <div
+              key={t.id + i}
+              className={`grid grid-cols-[2rem_minmax(0,1fr)_auto_3rem] gap-4 items-center px-4 py-2 rounded-md group ${
+                isCurrent ? "bg-surface-2/60" : "hover:bg-surface-2/60"
+              }`}
+            >
+              <button
+                onClick={onPlay}
+                disabled={!hasPreview}
+                className="text-sm text-muted-foreground text-center disabled:opacity-30"
+                aria-label={isPlaying ? "Pause" : "Play"}
+              >
+                {isPlaying ? <PauseGlyph /> : <PlayGlyph />}
+              </button>
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className="size-10 rounded-md shrink-0 bg-surface-3"
+                  style={cover ? { backgroundImage: `url(${cover})`, backgroundSize: "cover" } : undefined}
+                />
+                <div className="min-w-0">
+                  <div className={`text-sm truncate ${isCurrent ? "text-brand" : "text-foreground"}`}>
+                    {t.name}
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {t.artists.map((a) => a.name).join(", ")} · {t.album.name}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  className="inline-grid place-items-center rounded-md size-5 text-background"
+                  style={{ backgroundColor: "var(--spotify)" }}
+                  title="Spotify"
+                >
+                  <PlatformLogo platform={PLATFORMS[0]} className="size-3" />
+                </span>
+                {!hasPreview && (
+                  <a
+                    href={t.external_urls.spotify}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] text-muted-foreground hover:text-foreground underline"
+                  >
+                    open
+                  </a>
+                )}
+              </div>
+              <div className="text-right text-xs text-muted-foreground font-mono">
+                {fmtDuration(Math.round(t.duration_ms / 1000))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SearchView() {
+  const { spotify, player } = useApp();
+  const [q, setQ] = useState("");
+  const [submitted, setSubmitted] = useState("");
+  const [ytResults, setYtResults] = useState<YouTubeResult[] | null>(null);
+  const [spResults, setSpResults] = useState<SpotifyTrack[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const doSearch = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!q.trim()) return;
+    setSubmitted(q);
+    setLoading(true);
+    setError(null);
+    setYtResults(null);
+    setSpResults(null);
+    try {
+      const [yt, sp] = await Promise.allSettled([
+        searchYouTube(q),
+        spotify.isAuthed
+          ? (await import("@/lib/spotify")).searchTracks(q)
+          : Promise.resolve([] as SpotifyTrack[]),
+      ]);
+      if (yt.status === "fulfilled") setYtResults(yt.value);
+      else setError(`YouTube: ${yt.reason}`);
+      if (sp.status === "fulfilled") setSpResults(sp.value);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="p-6 lg:p-8">
+      <h1 className="text-3xl font-semibold mb-1">Search</h1>
+      <p className="text-sm text-muted-foreground mb-5">
+        Real results from YouTube{spotify.isAuthed ? " and Spotify" : " (connect Spotify for Spotify results)"}.
+      </p>
+      <form onSubmit={doSearch} className="flex gap-2 mb-6 max-w-2xl">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search artists, songs, anything…"
+          className="flex-1 px-4 py-2.5 bg-surface-2 rounded-full ring-1 ring-border text-sm outline-none focus:ring-brand"
+        />
+        <button
+          type="submit"
+          disabled={loading || !q.trim()}
+          className="px-5 rounded-full bg-foreground text-background text-sm font-semibold disabled:opacity-40"
+        >
+          {loading ? "Searching…" : "Search"}
+        </button>
+      </form>
+
+      {error && (
+        <div className="mb-4 px-3 py-2 rounded-md bg-red-500/10 text-red-400 text-xs ring-1 ring-red-500/30">
+          {error}
+        </div>
+      )}
+
+      {submitted && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Spotify results */}
+          <section>
+            <h2 className="text-sm font-mono uppercase tracking-widest text-muted-foreground mb-3">
+              Spotify
+            </h2>
+            {!spotify.isAuthed ? (
+              <button
+                onClick={() => beginSpotifyLogin()}
+                className="px-4 py-2 rounded-full bg-[#1DB954] text-black text-xs font-semibold"
+              >
+                Connect Spotify to see results
+              </button>
+            ) : !spResults ? (
+              <div className="text-sm text-muted-foreground">Loading…</div>
+            ) : spResults.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No matches.</div>
+            ) : (
+              <div className="space-y-1">
+                {spResults.map((t) => {
+                  const cover = t.album.images?.[2]?.url ?? t.album.images?.[0]?.url;
+                  const isCurrent = player.current?.id === `sp:${t.id}`;
+                  const isPlaying = isCurrent && player.playing;
+                  return (
+                    <div
+                      key={t.id}
+                      className="flex items-center gap-3 p-2 rounded-md hover:bg-surface-2/60"
+                    >
+                      <button
+                        onClick={() => {
+                          if (!t.preview_url) return;
+                          player.toggle({
+                            id: `sp:${t.id}`,
+                            title: t.name,
+                            artist: t.artists.map((a) => a.name).join(", "),
+                            src: t.preview_url,
+                          });
+                        }}
+                        disabled={!t.preview_url}
+                        className="size-10 rounded-md shrink-0 bg-surface-3 grid place-items-center disabled:opacity-50"
+                        style={cover ? { backgroundImage: `url(${cover})`, backgroundSize: "cover" } : undefined}
+                        aria-label="Play"
+                      >
+                        <span className="text-white">
+                          {isPlaying ? <PauseGlyph /> : <PlayGlyph />}
+                        </span>
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <div className={`text-sm truncate ${isCurrent ? "text-brand" : ""}`}>{t.name}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {t.artists.map((a) => a.name).join(", ")}
+                        </div>
+                      </div>
+                      <span
+                        className="inline-grid place-items-center rounded-md size-5 text-background"
+                        style={{ backgroundColor: "var(--spotify)" }}
+                        title="Spotify"
+                      >
+                        <PlatformLogo platform={PLATFORMS[0]} className="size-3" />
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* YouTube results */}
+          <section>
+            <h2 className="text-sm font-mono uppercase tracking-widest text-muted-foreground mb-3">
+              YouTube
+            </h2>
+            {!ytResults ? (
+              <div className="text-sm text-muted-foreground">Loading…</div>
+            ) : ytResults.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No matches.</div>
+            ) : (
+              <div className="space-y-4">
+                {ytResults.slice(0, 8).map((r) => (
+                  <YouTubeCard key={r.videoId} result={r} />
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {!submitted && (
+        <p className="text-sm text-muted-foreground">
+          Try searching for an artist or song.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function YouTubeCard({ result }: { result: YouTubeResult }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-lg ring-1 ring-border bg-surface-2/40 overflow-hidden">
+      <div className="flex items-center gap-3 p-3">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="size-16 shrink-0 rounded-md bg-surface-3 overflow-hidden"
+          style={{ backgroundImage: `url(${result.thumbnail})`, backgroundSize: "cover", backgroundPosition: "center" }}
+          aria-label="Play"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium line-clamp-2" dangerouslySetInnerHTML={{ __html: result.title }} />
+          <div className="text-xs text-muted-foreground truncate">{result.channel}</div>
+        </div>
+        <span
+          className="inline-grid place-items-center rounded-md size-5 text-background shrink-0"
+          style={{ backgroundColor: "var(--yt)" }}
+          title="YouTube"
+        >
+          <PlatformLogo platform={PLATFORMS[2]} className="size-3" />
+        </span>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="text-xs px-2.5 py-1 rounded-full bg-surface-2 ring-1 ring-border hover:bg-accent"
+        >
+          {open ? "Hide" : "Play"}
+        </button>
+      </div>
+      {open && (
+        <div className="aspect-video bg-black">
+          <iframe
+            src={`https://www.youtube.com/embed/${result.videoId}?autoplay=1`}
+            title={result.title}
+            className="w-full h-full"
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      )}
     </div>
   );
 }

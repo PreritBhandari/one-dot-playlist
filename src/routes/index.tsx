@@ -528,6 +528,15 @@ function PlatformHub() {
     LIBRARY.filter((song) => song.sources.includes(id)).length;
 
   const startServiceConnect = (platform: Platform) => {
+    if (platform.id === "spotify") {
+      void beginSpotifyLogin();
+      return;
+    }
+    if (platform.id === "yt") {
+      // YouTube uses API key auth — just enable it
+      connect("yt");
+      return;
+    }
     setPending((s) => ({ ...s, [platform.id]: true }));
     window.open(SERVICE_AUTH_URLS[platform.id], "_blank");
   };

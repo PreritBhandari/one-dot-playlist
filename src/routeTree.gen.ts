@@ -10,33 +10,43 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CallbackSpotifyRouteImport } from './routes/callback.spotify'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CallbackSpotifyRoute = CallbackSpotifyRouteImport.update({
+  id: '/callback/spotify',
+  path: '/callback/spotify',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/callback/spotify': typeof CallbackSpotifyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/callback/spotify': typeof CallbackSpotifyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/callback/spotify': typeof CallbackSpotifyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/callback/spotify'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/callback/spotify'
+  id: '__root__' | '/' | '/callback/spotify'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CallbackSpotifyRoute: typeof CallbackSpotifyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +58,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/callback/spotify': {
+      id: '/callback/spotify'
+      path: '/callback/spotify'
+      fullPath: '/callback/spotify'
+      preLoaderRoute: typeof CallbackSpotifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CallbackSpotifyRoute: CallbackSpotifyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

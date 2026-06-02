@@ -9,6 +9,9 @@ import {
   type Playlist,
   type Song,
 } from "@/hooks/use-library";
+import { beginSpotifyLogin, type SpotifyTrack } from "@/lib/spotify";
+import { searchYouTube, type YouTubeResult } from "@/lib/youtube";
+import { useYouTubePlayer } from "@/hooks/use-youtube-player";
 
 export const Route = createFileRoute("/")({
   head: () => ({

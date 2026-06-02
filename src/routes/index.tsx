@@ -104,10 +104,22 @@ function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) 
           label="Home"
         />
         <NavItem
+          active={view.kind === "search"}
+          onClick={() => setView({ kind: "search" })}
+          icon={<SearchIcon />}
+          label="Search"
+        />
+        <NavItem
           active={view.kind === "library"}
           onClick={() => setView({ kind: "library" })}
           icon={<SearchIcon />}
           label="All Songs"
+        />
+        <NavItem
+          active={view.kind === "spotify"}
+          onClick={() => setView({ kind: "spotify" })}
+          icon={<PlugIcon />}
+          label="Spotify"
         />
         <NavItem
           active={view.kind === "connect"}

@@ -41,6 +41,9 @@ type View =
   | { kind: "home" }
   | { kind: "library" }
   | { kind: "connect" }
+  | { kind: "search" }
+  | { kind: "spotify" }
+  | { kind: "spotify-playlist"; id: string; name: string }
   | { kind: "playlist"; id: string };
 
 type SourceFilter = "all" | PlatformId;

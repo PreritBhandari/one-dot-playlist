@@ -55,7 +55,20 @@ export async function beginSpotifyLogin(): Promise<void> {
     code_challenge: challenge,
   });
 
-  window.location.assign(`https://accounts.spotify.com/authorize?${params}`);
+  const url = `https://accounts.spotify.com/authorize?${params}`;
+  // Spotify forbids being embedded in iframes (X-Frame-Options: DENY).
+  // The Lovable preview runs inside an iframe, so navigate the top window.
+  try {
+    if (window.top && window.top !== window.self) {
+      window.top.location.href = url;
+      return;
+    }
+  } catch {
+    // Cross-origin iframe — fall back to opening in a new tab.
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  window.location.assign(url);
 }
 
 export async function completeSpotifyLogin(code: string): Promise<StoredToken> {

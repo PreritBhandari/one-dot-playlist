@@ -1,8 +1,4 @@
-import {
-  SPOTIFY_CLIENT_ID,
-  SPOTIFY_SCOPES,
-  getSpotifyRedirectUri,
-} from "./oauth-config";
+import { SPOTIFY_CLIENT_ID, SPOTIFY_SCOPES, getSpotifyRedirectUri } from "./oauth-config";
 
 /* ------------------------------------------------------------------ */
 /* PKCE helpers                                                        */
@@ -31,8 +27,7 @@ async function sha256(input: string): Promise<ArrayBuffer> {
 }
 
 function randomString(len = 64): string {
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
   const arr = new Uint8Array(len);
   crypto.getRandomValues(arr);
   return Array.from(arr, (b) => chars[b % chars.length]).join("");
@@ -149,7 +144,9 @@ async function getValidToken(): Promise<string | null> {
   if (!t) return null;
   if (!hasRequiredScopes(t)) {
     logoutSpotify();
-    throw new Error("Spotify needs a fresh connection with playlist and profile permissions. Please connect Spotify again.");
+    throw new Error(
+      "Spotify needs a fresh connection with playlist and profile permissions. Please connect Spotify again.",
+    );
   }
   if (t.expires_at - 30_000 > Date.now()) return t.access_token;
   if (!t.refresh_token) {
@@ -184,9 +181,7 @@ async function api<T>(path: string): Promise<T> {
       detail = await res.text().catch(() => "");
     }
     if (res.status === 401 || res.status === 403) logoutSpotify();
-    throw new Error(
-      `Spotify API ${res.status} on ${path}${detail ? `: ${detail}` : ""}`,
-    );
+    throw new Error(`Spotify API ${res.status} on ${path}${detail ? `: ${detail}` : ""}`);
   }
   return res.json() as Promise<T>;
 }
@@ -222,15 +217,11 @@ export function getMe() {
 }
 
 export async function getMyPlaylists(): Promise<SpotifyPlaylist[]> {
-  const data = await api<{ items: SpotifyPlaylist[] }>(
-    "/me/playlists?limit=50",
-  );
+  const data = await api<{ items: SpotifyPlaylist[] }>("/me/playlists?limit=50");
   return data.items.filter(Boolean);
 }
 
-export async function getPlaylistTracks(
-  playlistId: string,
-): Promise<SpotifyTrack[]> {
+export async function getPlaylistTracks(playlistId: string): Promise<SpotifyTrack[]> {
   const data = await api<{ items: { track: SpotifyTrack | null }[] }>(
     `/playlists/${playlistId}/tracks?limit=100`,
   );
